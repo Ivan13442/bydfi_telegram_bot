@@ -6,7 +6,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEB_APP_URL = os.getenv("WEB_APP_URL", "https://bydfi-position-calc.onrender.com")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # ДОЛЖЕН БЫТЬ без /webhook на конце, только https://...onrender.com
+# ДОЛЖЕН быть БЕЗ /webhook на конце, только https://...onrender.com
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
@@ -15,7 +16,7 @@ if not WEBHOOK_URL:
 
 app = Flask(__name__)
 
-# Создаём приложение PTB ОДИН РАЗ
+# Создаём приложение PTB один раз
 telegram_app = Application.builder().token(BOT_TOKEN).build()
 
 
@@ -39,19 +40,32 @@ telegram_app.add_handler(CommandHandler("start", start))
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    # Telegram шлёт JSON
-    data = request.get_json(force=True)
+    print("==> /webhook called")
+    try:
+        # Сырое тело запроса от Telegram — для отладки
+        print(request.data)
 
-    # Десериализуем update
-    update = Update.de_json(data, telegram_app.bot)
+        # Telegram шлёт JSON
+        data = request.get_json(force=True)
 
-    # Вместо того, чтобы создавать новый event loop на каждый запрос,
-    # используем уже существующий loop у приложения.
-    # Для простоты используем asyncio.create_task на глобальном loop.
-    asyncio.get_event_loop().create_task(telegram_app.process_update(update))
+        # Десериализуем Update
+        update = Update.de_json(data, telegram_app.bot)
 
-    # Всегда сразу отвечаем 200 OK
-    return "ok", 200
+        # Получаем (или создаём) event loop для текущего потока
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        loop.create_task(telegram_app.process_update(update))
+
+        # Всегда сразу отвечаем 200 OK
+        return "ok", 200
+    except Exception as e:
+        # Логируем ошибку, чтобы увидеть её в Render
+        print("ERROR in /webhook:", repr(e))
+        return "error", 500
 
 
 @app.route("/")
