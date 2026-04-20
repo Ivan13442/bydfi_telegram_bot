@@ -10,7 +10,7 @@ if not BOT_TOKEN:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("ОТКРЫТЬ калькулятор", url=WEB_APP_URL)]
+        [InlineKeyboardButton("ОТКРЫТЬ", url=WEB_APP_URL)]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
