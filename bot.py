@@ -1,27 +1,15 @@
 import os
-import asyncio
-from flask import Flask, request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEB_APP_URL = os.getenv("WEB_APP_URL", "https://bydfi-position-calc.onrender.com")
-# ДОЛЖЕН быть БЕЗ /webhook на конце, только https://...onrender.com
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
-if not WEBHOOK_URL:
-    raise RuntimeError("WEBHOOK_URL is not set")
-
-app = Flask(__name__)
-
-# Создаём приложение PTB один раз
-telegram_app = Application.builder().token(BOT_TOKEN).build()
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # На всякий случай проверяем, что message есть
     if update.message is None:
         return
 
@@ -29,69 +17,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("ОТКРЫТЬ калькулятор", url=WEB_APP_URL)]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+
     await update.message.reply_text(
         "Привет! Нажми кнопку ниже, чтобы открыть калькулятор BYDFi:",
         reply_markup=reply_markup,
     )
 
 
-telegram_app.add_handler(CommandHandler("start", start))
+def main():
+    application = Application.builder().token(BOT_TOKEN).build()
 
+    application.add_handler(CommandHandler("start", start))
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    print("==> /webhook called")
-    try:
-        # Сырое тело запроса от Telegram — для отладки
-        print(request.data)
+    # Render пробрасывает внешний порт в $PORT (обычно 10000)
+    port = int(os.getenv("PORT", 10000))
 
-        # Telegram шлёт JSON
-        data = request.get_json(force=True)
-
-        # Десериализуем Update
-        update = Update.de_json(data, telegram_app.bot)
-
-        # Получаем (или создаём) event loop для текущего потока
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        loop.create_task(telegram_app.process_update(update))
-
-        # Всегда сразу отвечаем 200 OK
-        return "ok", 200
-    except Exception as e:
-        # Логируем ошибку, чтобы увидеть её в Render
-        print("ERROR in /webhook:", repr(e))
-        return "error", 500
-
-
-@app.route("/")
-def index():
-    return "Bot is running", 200
-
-
-def setup_webhook():
-    async def runner():
-        # Инициализируем приложение, но НЕ запускаем run_polling / run_webhook
-        await telegram_app.initialize()
-
-        # Сбрасываем старый вебхук (на всякий случай)
-        await telegram_app.bot.delete_webhook()
-
-        # Ставим новый вебхук НА URL ЭТОГО СЕРВИСА
-        # ВАЖНО: WEBHOOK_URL должен быть вида https://bydfi-telegram-bot.onrender.com
-        await telegram_app.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
-
-    asyncio.run(runner())
+    # run_webhook сам:
+    # 1) создаёт и крутит event loop
+    # 2) поднимает HTTP-сервер
+    # 3) регистрирует webhook в Telegram
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path="webhook",  # путь на сервере
+        # ПОЛНЫЙ внешний URL до /webhook:
+        webhook_url=f"{os.getenv('WEBHOOK_URL')}/webhook" if os.getenv("WEBHOOK_URL") else None,
+    )
 
 
 if __name__ == "__main__":
-    # Один раз на старте настраиваем webhook и инициализируем приложение PTB
-    setup_webhook()
-
-    # Запускаем Flask. Без debug, без дополнительных event loop.
-    port = int(os.getenv("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    main()
