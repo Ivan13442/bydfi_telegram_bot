@@ -33,7 +33,7 @@ def main():
 
     port = int(os.getenv("PORT", 10000))
 
-    # ЯВНО создаём и привязываем event loop для главного потока
+    # Создаём и привязываем event loop для main thread (fix для 3.11+ / 3.14)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
