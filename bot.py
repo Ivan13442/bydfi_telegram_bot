@@ -1,4 +1,5 @@
 import os
+import asyncio
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -9,6 +10,8 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # полный https-URL этого се
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
+if not WEBHOOK_URL:
+    raise RuntimeError("WEBHOOK_URL is not set")
 
 app = Flask(__name__)
 telegram_app = Application.builder().token(BOT_TOKEN).build()
@@ -32,8 +35,9 @@ telegram_app.add_handler(CommandHandler("start", start))
 def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, telegram_app.bot)
-    telegram_app.update_queue.put_nowait(update)
-    return "ok"
+    # обрабатываем update синхронно через asyncio.run
+    asyncio.run(telegram_app.process_update(update))
+    return "ok", 200
 
 
 @app.route("/")
@@ -41,26 +45,18 @@ def index():
     return "Bot is running", 200
 
 
-async def set_webhook():
-    if not WEBHOOK_URL:
-        raise RuntimeError("WEBHOOK_URL is not set")
-    await telegram_app.bot.delete_webhook()
-    await telegram_app.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
-
-
-def main():
-    import asyncio
-
+def setup_webhook():
     async def runner():
-        await set_webhook()
         await telegram_app.initialize()
+        await telegram_app.bot.delete_webhook()
+        await telegram_app.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
         await telegram_app.start()
-        # update_queue будет обрабатываться в фоне
-        await telegram_app.updater.start_polling(drop_pending_updates=True)
 
-    asyncio.get_event_loop().create_task(runner())
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+    asyncio.run(runner())
 
 
 if __name__ == "__main__":
-    main()
+    # один раз на старте настраиваем webhook
+    setup_webhook()
+    port = int(os.getenv("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
