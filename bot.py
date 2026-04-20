@@ -22,7 +22,10 @@ loop = asyncio.new_event_loop()
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("==> start handler called, update:", update)
+
     if update.message is None:
+        print("==> update.message is None, return")
         return
 
     keyboard = [
@@ -33,8 +36,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Привет! Нажми кнопку ниже, чтобы открыть калькулятор BYDFi:",
         reply_markup=reply_markup,
     )
-
-
+    print("==> reply_text sent")
 telegram_app.add_handler(CommandHandler("start", start))
 
 
