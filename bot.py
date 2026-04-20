@@ -55,12 +55,12 @@ def run_bot_loop():
             await telegram_app.start()
             print("==> telegram_app started")
         except Exception as e:
-            # Если что-то упадёт на старте, увидим это в логах
             print("ERROR in bot runner:", repr(e))
 
     # запускаем инициализацию и start
     bot_loop.run_until_complete(runner())
-    # если всё ок, крутим loop бесконечно
+    print("==> finished runner, entering run_forever")
+
     try:
         print("==> entering bot_loop.run_forever()")
         bot_loop.run_forever()
@@ -87,11 +87,9 @@ def webhook():
             telegram_app.process_update(update), bot_loop
         )
     except RuntimeError as e:
-        # сюда попадём, если loop закрыт или ещё не запущен
         print("ERROR in run_coroutine_threadsafe:", repr(e))
         return "loop error", 500
 
-    # Всегда сразу отвечаем 200 OK
     return "ok", 200
 
 
@@ -114,7 +112,7 @@ def setup_webhook():
 
 
 if __name__ == "__main__":
-    # 1. Настраиваем webhook в Telegram (отдельный временный loop)
+    # 1. Настраиваем webhook в Telegram (временный loop)
     setup_webhook()
 
     # 2. Запускаем event loop бота в отдельном потоке
