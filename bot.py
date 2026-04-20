@@ -1,4 +1,5 @@
 import os
+import asyncio
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -28,16 +29,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     application = Application.builder().token(BOT_TOKEN).build()
-
     application.add_handler(CommandHandler("start", start))
 
-    # Render прокидывает внешний порт в переменную окружения PORT
     port = int(os.getenv("PORT", 10000))
 
-    # run_webhook:
-    # 1) создаёт и крутит event loop
-    # 2) поднимает HTTP-сервер
-    # 3) регистрирует webhook в Telegram
+    # ЯВНО создаём и привязываем event loop для главного потока
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     application.run_webhook(
         listen="0.0.0.0",
         port=port,
