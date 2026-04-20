@@ -1,32 +1,19 @@
 import os
-import asyncio
-import threading
-from flask import Flask, request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEB_APP_URL = os.getenv("WEB_APP_URL", "https://bydfi-position-calc.onrender.com")
-# ДОЛЖЕН быть БЕЗ /webhook на конце, только https://...onrender.com
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # https://bydfi-telegram-bot-vkbb.onrender.com
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
 if not WEBHOOK_URL:
     raise RuntimeError("WEBHOOK_URL is not set")
 
-app = Flask(__name__)
-
-# Глобальное приложение и event loop для бота
-telegram_app = Application.builder().token(BOT_TOKEN).build()
-bot_loop = asyncio.new_event_loop()
-
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("==> start handler called, update:", update)
-
     if update.message is None:
-        print("==> update.message is None, return")
         return
 
     keyboard = [
@@ -37,89 +24,27 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Привет! Нажми кнопку ниже, чтобы открыть калькулятор BYDFi:",
         reply_markup=reply_markup,
     )
-    print("==> reply_text sent")
 
 
-telegram_app.add_handler(CommandHandler("start", start))
+def main():
+    application = Application.builder().token(BOT_TOKEN).build()
 
+    application.add_handler(CommandHandler("start", start))
 
-def run_bot_loop():
-    """Фоновый поток, в котором крутится event loop телеграм-приложения."""
-    asyncio.set_event_loop(bot_loop)
+    # Render прокидывает внешний порт в переменную окружения PORT
+    port = int(os.getenv("PORT", 10000))
 
-    async def runner():
-        try:
-            print("==> initializing telegram_app")
-            await telegram_app.initialize()
-            print("==> starting telegram_app")
-            await telegram_app.start()
-            print("==> telegram_app started")
-        except Exception as e:
-            print("ERROR in bot runner:", repr(e))
-
-    # запускаем инициализацию и start
-    bot_loop.run_until_complete(runner())
-    print("==> finished runner, entering run_forever")
-
-    try:
-        print("==> entering bot_loop.run_forever()")
-        bot_loop.run_forever()
-    except Exception as e:
-        print("ERROR in bot_loop.run_forever:", repr(e))
-
-
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    # Telegram шлёт JSON
-    data = request.get_json(force=True)
-
-    # Десериализуем update
-    update = Update.de_json(data, telegram_app.bot)
-
-    # Если по какой-то причине loop уже закрыт — логируем и не падаем
-    if bot_loop.is_closed():
-        print("ERROR: bot_loop is closed, cannot process update")
-        return "loop closed", 500
-
-    # Отправляем обработку апдейта в уже работающий event loop
-    try:
-        asyncio.run_coroutine_threadsafe(
-            telegram_app.process_update(update), bot_loop
-        )
-    except RuntimeError as e:
-        print("ERROR in run_coroutine_threadsafe:", repr(e))
-        return "loop error", 500
-
-    return "ok", 200
-
-
-@app.route("/")
-def index():
-    return "Bot is running", 200
-
-
-def setup_webhook():
-    """Настройка вебхука в Telegram. Используем отдельный временный loop."""
-    async def runner():
-        print("==> deleting old webhook")
-        await telegram_app.bot.delete_webhook()
-        print("==> setting new webhook to", f"{WEBHOOK_URL}/webhook")
-        await telegram_app.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
-        print("==> webhook set")
-
-    # ВАЖНО: этот loop никак не связан с bot_loop, он временный и будет закрыт
-    asyncio.run(runner())
+    # run_webhook:
+    # 1) создаёт и крутит event loop
+    # 2) поднимает HTTP-сервер
+    # 3) регистрирует webhook в Telegram
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path="webhook",
+        webhook_url=f"{WEBHOOK_URL}/webhook",
+    )
 
 
 if __name__ == "__main__":
-    # 1. Настраиваем webhook в Telegram (временный loop)
-    setup_webhook()
-
-    # 2. Запускаем event loop бота в отдельном потоке
-    t = threading.Thread(target=run_bot_loop, daemon=True)
-    t.start()
-
-    # 3. Запускаем Flask
-    port = int(os.getenv("PORT", 10000))
-    print(f"==> starting Flask on port {port}")
-    app.run(host="0.0.0.0", port=port)
+    main()
